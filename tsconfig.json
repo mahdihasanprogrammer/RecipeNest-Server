@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",                          
+    "module": "commonjs",                        // 👈 Express-এর জন্য সবচেয়ে সেফ ও পপুলার
+    "rootDir": "./",                             // 👈 যেহেতু src ফোল্ডার নেই, রুট থেকে শুরু
+    "outDir": "./dist",                          // 👈 বিল্ড ফাইলগুলো dist ফোল্ডারে যাবে
+    "strict": true,                              
+    "skipLibCheck": true,
+    "esModuleInterop": true,                     // 👈 CommonJS মডিউলগুলো স্মুথলি ইম্পোর্ট করার জন্য
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["**/*.ts"],                        // 👈 সব TS ফাইল ট্র্যাক করবে
+  "exclude": ["node_modules", "dist"]            // 👈 এই ফোল্ডারগুলো চেক করবে না
+}
