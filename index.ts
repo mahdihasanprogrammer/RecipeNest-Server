@@ -60,7 +60,36 @@ async function run() {
             }
         });
 
-   
+        // user, get my-recipes by user id;
+        app.get('/api/my-recipes/:creatorId', async (req: Request, res: Response) => {
+            const { creatorId } = req.params as { creatorId: string };
+            const result = await recipeCollection
+                .find({ creatorId })
+                .sort({ createdAt: -1 })
+                .toArray();
+            res.send(result)
+
+        })
+
+        // user delete recipe;
+        app.delete('/api/delete-recipe/:recipeId', async (req: Request, res: Response) => {
+            const { recipeId } = req.params as { recipeId: string };
+            const query = {
+                _id: new ObjectId(recipeId)
+            }
+            await recipeCollection.deleteOne(query);
+            res.send({ success: true, message: 'recipe delete successful!' })
+        })
+
+        //     // 🔍 সব রেpositions গেট করার ডেমো API রুট
+        //     app.get('/api/recipes', async (req: Request, res: Response) => {
+        //       try {
+        //         const recipes = await recipeCollection.find().toArray();
+        //         res.status(200).json({ success: true, data: recipes });
+        //       } catch (error) {
+        //         res.status(500).json({ success: false, message: "Failed to fetch recipes." });
+        //       }
+        //     });
 
     }
 
