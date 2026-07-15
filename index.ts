@@ -46,13 +46,13 @@ async function run() {
                     createdAt: new Date()
                 }
 
-                // ডাটাবেজে ডেটা ইনসার্ট করা
+
                 const result = await recipeCollection.insertOne(newData);
 
                 res.status(201).json({
                     success: true,
                     message: "Recipe added to database successfully!",
-                    insertedId: result.insertedId
+
                 });
             } catch (error) {
                 console.error("Database Insert Error:", error);
@@ -81,15 +81,54 @@ async function run() {
             res.send({ success: true, message: 'recipe delete successful!' })
         })
 
-        //     // 🔍 সব রেpositions গেট করার ডেমো API রুট
-        //     app.get('/api/recipes', async (req: Request, res: Response) => {
-        //       try {
-        //         const recipes = await recipeCollection.find().toArray();
-        //         res.status(200).json({ success: true, data: recipes });
-        //       } catch (error) {
-        //         res.status(500).json({ success: false, message: "Failed to fetch recipes." });
-        //       }
-        //     });
+        // public, not secured , all recipes with pagination and searching and filtering;
+        app.get('/api/public/recipes', async (req: Request, res: Response) => {
+            const { search, cuisine, difficult, sortBy } = req.query as {
+                search?: string,
+                cuisine?: string,
+                difficult?: string,
+                sortBy?: string,
+            };
+            const query: Record<string, any> = {};
+            if (search?.trim()) {
+                query.$or = [
+                    { title: { $regex: search, $options: "i" } },
+                    { shortDesc: { $regex: search, $options: "i" } },
+
+                ]
+            };
+            if (cuisine) query.cuisine = cuisine;
+            if (difficult) query.difficulty = difficult;
+
+            let sortQuery = {}
+            if (sortBy === 'newest') {
+                sortQuery = { createdAt: -1 }
+            }
+            if (sortBy === 'oldest') {
+                sortQuery = { createdAt: 1 };
+            }
+
+            const page = Number(req.query.page || 1);
+            const perPage = 12;
+            const skipItems = (page - 1) * perPage;
+
+
+            try {
+                const totalRecipe = await recipeCollection.countDocuments(query);
+                const recipes = await recipeCollection.find(query)
+                    .sort(sortQuery)
+                    .skip(skipItems)
+                    .limit(perPage)
+                    .toArray();
+                res.status(200).send({recipes,totalRecipe});
+            }
+
+            catch (error) {
+                res.status(500).json({ success: false, message: "Failed to fetch recipes." });
+            }
+
+
+        });
 
     }
 
