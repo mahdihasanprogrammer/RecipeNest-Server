@@ -130,6 +130,13 @@ async function run() {
 
         });
 
+        // get recipe by id;
+        app.get('/api/recipes/:id', async(req:Request, res:Response) =>{
+            const {id} = req.params as {id: string};
+            const result = await recipeCollection.findOne({_id: new ObjectId(id)});
+            res.send(result || {})
+        })
+
     }
 
     catch (error) {
