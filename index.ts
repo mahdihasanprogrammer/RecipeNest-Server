@@ -79,6 +79,44 @@ async function run() {
             }
             await recipeCollection.deleteOne(query);
             res.send({ success: true, message: 'recipe delete successful!' })
+        });
+
+        // latest recipe, not secured;
+        app.get('/api/latest-recipes', async (req: Request, res: Response) => {
+            const result = await recipeCollection.find().sort({ createdAt: -1 }).limit(4).toArray();
+            res.send(result)
+        });
+
+        
+        // top contributors not secured;
+        app.get('/api/recipes/top-contributors', async (req: Request, res: Response) => {
+            const pipeline = [
+                {
+                    $group:
+                    {
+                        _id: "$creatorId",
+                        creatorName: { $first: "$creatorName" },
+                        creatorEmail: { $first: "$creatorEmail" },
+                        creatorImage: { $first: "$creatorImage" },
+                        contribute: { $sum: 1 }
+                    },
+                },
+                { $sort: { contribute: -1 } },
+                {
+                    $project: {
+                        creatorId: "$_id",
+                        creatorName: 1,
+                        creatorEmail: 1,
+                        creatorImage: 1,
+                        contribute: 1,
+                        _id: 0
+
+                    }
+                },
+                { $limit: 4 }
+            ]
+            const result = await recipeCollection.aggregate(pipeline).toArray()
+            res.send(result)
         })
 
         // public, not secured , all recipes with pagination and searching and filtering;
@@ -120,7 +158,7 @@ async function run() {
                     .skip(skipItems)
                     .limit(perPage)
                     .toArray();
-                res.status(200).send({recipes,totalRecipe});
+                res.status(200).send({ recipes, totalRecipe });
             }
 
             catch (error) {
@@ -130,10 +168,10 @@ async function run() {
 
         });
 
-        // get recipe by id;
-        app.get('/api/recipes/:id', async(req:Request, res:Response) =>{
-            const {id} = req.params as {id: string};
-            const result = await recipeCollection.findOne({_id: new ObjectId(id)});
+        // get recipe by id not secured;
+        app.get('/api/recipes/:id', async (req: Request, res: Response) => {
+            const { id } = req.params as { id: string };
+            const result = await recipeCollection.findOne({ _id: new ObjectId(id) });
             res.send(result || {})
         })
 
