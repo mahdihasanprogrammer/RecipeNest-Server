@@ -6,6 +6,23 @@ import dotenv from 'dotenv';
 // .env ফাইল লোড করা
 dotenv.config();
 
+// 🛠️ TypeScript Request Interface Extension (req.user এর এরর ফিক্স করার জন্য)
+declare global {
+    namespace Express {
+        interface Request {
+            user?: {
+                _id: string | ObjectId;
+                name: string;
+                email: string;
+                userRole: string;
+                image?: string | null;
+                createdAt?: string | Date;
+                updatedAt?: string | Date;
+                emailVerified?: boolean;
+            };
+        }
+    }
+}
 const app = express();
 const port = process.env.PORT || 6060;
 
@@ -30,15 +47,159 @@ const client = new MongoClient(uri, {
 async function run() {
     try {
         // MongoDB সার্ভারের সাথে কানেক্ট করা
-        await client.connect();
-        console.log("📌 Successfully connected to MongoDB!");
+        // await client.connect();
+        // console.log("📌 Successfully connected to MongoDB!");
 
         const db = client.db(process.env.DB_NAME);
         const recipeCollection = db.collection("recipes");
+        const sessionCollection = db.collection("session");
+        const userCollection = db.collection("user");
+
+        interface TUser {
+            _id: string | ObjectId;
+            name: string;
+            email: string;
+            userRole: string;
+            image?: string | null;
+            createdAt?: string | Date;
+            updatedAt?: string | Date;
+            emailVerified?: boolean;
+        }
+
+        // middle ware >---- verify token;
+        const verifyToken = async (req: Request, res: Response, next: NextFunction) => {
+            const authHeader = req.headers?.authorization;
+
+            if (!authHeader) {
+                return res.status(401).send({ message: "Unauthorized access" })
+            }
+
+            const token = authHeader.split(" ")[1];
+
+
+            if (!token) {
+                return res.status(401).send({ message: "Unauthorized access" })
+            }
+
+            const query = { token: token };
+            const session = await sessionCollection.findOne(query);
+
+            if (!session) {
+                return res.status(401).send({ message: "Unauthorized access" })
+            }
+
+            const userId = session?.userId;
+            const user = await userCollection.findOne({
+                _id: userId
+            })
+
+            if (!user) {
+                return res.status(401).send({ message: "Unauthorized access" })
+            }
+
+            req.user = user as TUser
+            next()
+        };
+
+        const verifyUser = async (req: Request, res: Response, next: NextFunction) => {
+            if (req.user?.userRole !== 'user') {
+                return res.status(403).send({ message: 'Forbidden' })
+            }
+            next()
+        }
+
+
+        // user dashboard stats;
+        app.get('/api/user/dashboard-stats', verifyToken,verifyUser, async (req: Request, res: Response) => {
+            try {
+                const userId = req.user?._id.toString();
+                
+                const query = { creatorId: userId };
+
+                // 🕐 টাইমস্ট্যাম্প সেটআপ
+                const todayStart = new Date();
+                todayStart.setHours(0, 0, 0, 0);
+
+                const sevenDaysAgo = new Date();
+                sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+                sevenDaysAgo.setHours(0, 0, 0, 0);
+
+                // 🚀 Parallel execution using Promise.all
+                const [
+                    totalRecipes,
+                    todayCreated,
+                    cuisineAggregation,
+                    recentRecipes,
+                    chartRawData
+                ] = await Promise.all([
+                    recipeCollection.countDocuments(query),
+                    recipeCollection.countDocuments({
+                        creatorId: userId,
+                        createdAt: { $gte: todayStart }
+                    }),
+                    recipeCollection.aggregate([
+                        { $match: { creatorId: userId } },
+                        { $group: { _id: "$cuisine" } },
+                        { $count: "uniqueCuisines" }
+                    ]).toArray(),
+                    recipeCollection.find(query)
+                        .sort({ createdAt: -1 })
+                        .limit(4)
+                        .toArray(),
+                    recipeCollection.aggregate([
+                        {
+                            $match: {
+                                creatorId: userId,
+                                createdAt: { $gte: sevenDaysAgo }
+                            }
+                        },
+                        {
+                            $group: {
+                                _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+                                count: { $sum: 1 }
+                            }
+                        },
+                        { $sort: { _id: 1 } }
+                    ]).toArray()
+                ]);
+
+                const totalCuisine = cuisineAggregation[0]?.uniqueCuisines || 0;
+
+                // 📊 চার্ট ডাটা ফরম্যাটিং (Sun, Mon...)
+                const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                const chartData = [];
+
+                for (let i = 6; i >= 0; i--) {
+                    const d = new Date();
+                    d.setDate(d.getDate() - i);
+                    const dateString = d.toISOString().split('T')[0];
+                    const dayName = dayNames[d.getDay()];
+
+                    const found = chartRawData.find(item => item._id === dateString);
+                    chartData.push({
+                        day: dayName,
+                        count: found ? found.count : 0
+                    });
+                }
+
+                // 📦 শুধু স্ট্যাটস ডাটা পাঠানো হচ্ছে
+                res.status(200).send({
+                    totalRecipes,
+                    todayCreated,
+                    totalCuisine,
+                    recentRecipes,
+                    chartData
+                });
+
+            } catch (error) {
+                console.error('Dashboard Stats Error:', error);
+                res.status(500).send({ message: 'Internal server error' });
+            }
+        });
 
 
         // user add recipe;
-        app.post('/api/add-recipe', async (req: Request, res: Response) => {
+        app.post('/api/add-recipe', verifyToken, verifyUser, async (req: Request, res: Response) => {
             try {
                 const recipeData = req.body;
                 const newData = {
@@ -47,7 +208,7 @@ async function run() {
                 }
 
 
-                const result = await recipeCollection.insertOne(newData);
+                await recipeCollection.insertOne(newData);
 
                 res.status(201).json({
                     success: true,
@@ -61,8 +222,9 @@ async function run() {
         });
 
         // user, get my-recipes by user id;
-        app.get('/api/my-recipes/:creatorId', async (req: Request, res: Response) => {
+        app.get('/api/my-recipe/:creatorId', verifyToken, verifyUser, async (req: Request, res: Response) => {
             const { creatorId } = req.params as { creatorId: string };
+
             const result = await recipeCollection
                 .find({ creatorId })
                 .sort({ createdAt: -1 })
@@ -72,7 +234,7 @@ async function run() {
         })
 
         // user delete recipe;
-        app.delete('/api/delete-recipe/:recipeId', async (req: Request, res: Response) => {
+        app.delete('/api/delete-recipe/:recipeId', verifyToken, verifyUser, async (req: Request, res: Response) => {
             const { recipeId } = req.params as { recipeId: string };
             const query = {
                 _id: new ObjectId(recipeId)
@@ -87,7 +249,7 @@ async function run() {
             res.send(result)
         });
 
-        
+
         // top contributors not secured;
         app.get('/api/recipes/top-contributors', async (req: Request, res: Response) => {
             const pipeline = [
@@ -194,6 +356,8 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 });
 
 // সার্ভার লিসেন করা
+
 app.listen(port, () => {
     console.log(`🚀 Server running on port ${port}`);
 });
+export default app;
